@@ -73,7 +73,7 @@ let ADMIN_ID; // set via CLI
 // In-memory pending requests (to allow admin to cancel)
 const pendingRequests = {}; // { chatId: { cancel: boolean } }
 
-// Admin state (for processing admin commands)
+// Define adminState only once:
 const adminState = {}; // { chatId: { stage: string } }
 
 // ---------------------------
@@ -117,14 +117,11 @@ async function userLog(chatId, message) {
 const API_BASE_URL = 'https://quack-ai-api.duckchain.io';
 const APP_REFERER = 'https://app.quackai.ai/';
 
-// For proxies (if any) – here we omit proxy support for brevity
 function createAxiosInstance(proxy = null) {
   if (!proxy) return axios;
-  // (Proxy handling code omitted for simplicity)
-  return axios;
+  return axios; // Proxy handling omitted for brevity.
 }
 
-// Create a new wallet (returns an object with wallet details and empty topics/usedTopics)
 async function createWallet() {
   const wallet = ethers.Wallet.createRandom();
   return {
@@ -139,7 +136,6 @@ async function createWallet() {
   };
 }
 
-// Sign a fixed message with the wallet's private key
 async function signMessage(privateKey) {
   const wallet = new ethers.Wallet(privateKey);
   const message = "Welcome to Quack AI";
@@ -147,12 +143,10 @@ async function signMessage(privateKey) {
   return signature;
 }
 
-// Register the wallet with Quack AI using a referral code (which is now 6 letters)
 async function registerWallet(wallet, referralCode) {
   try {
     console.log(`Registering wallet: ${wallet.address}`);
     const axiosInstance = createAxiosInstance();
-    // First, try to get user info (this may create the account)
     await axiosInstance.get(`${API_BASE_URL}/user/user_info?address=${wallet.address}`, {
       headers: { "Referer": APP_REFERER }
     });
@@ -167,7 +161,6 @@ async function registerWallet(wallet, referralCode) {
       throw new Error("Failed to get authentication token");
     }
     wallet.jwt = connectResponse.data.data.token;
-    // Bind the referral (now referral code is 6 letters)
     await axiosInstance.get(`${API_BASE_URL}/user/bind_invite?inviteCode=${referralCode}`, {
       headers: { "Referer": APP_REFERER, "authorization": `jwt ${wallet.jwt}` }
     });
@@ -188,7 +181,6 @@ async function registerWallet(wallet, referralCode) {
   }
 }
 
-// Use the wallet's topics (user provided) to get a random topic that hasn't been used yet.
 function getRandomTopic(wallet) {
   if (!wallet.topics || wallet.topics.length === 0) return "Default topic";
   const available = wallet.topics.filter(t => !wallet.usedTopics.includes(t));
@@ -202,7 +194,6 @@ function getRandomTopic(wallet) {
   return topic;
 }
 
-// Perform one chat session using a random topic.
 async function performChat(wallet, chatIndex) {
   try {
     if (!wallet.jwt) {
@@ -236,7 +227,6 @@ async function performChat(wallet, chatIndex) {
   }
 }
 
-// Complete daily chats (perform 5 chats)
 async function completeDailyChats(wallet) {
   console.log(`Starting daily chats for wallet: ${wallet.address}`);
   for (let i = 0; i < 5; i++) {
@@ -253,13 +243,8 @@ async function completeDailyChats(wallet) {
 // ---------------------------
 // TELEGRAM BOT FUNCTIONS
 // ---------------------------
+const userState = {}; // { chatId: { stage, count, referralCode, topics } }
 
-// User conversation state will hold: stage, count, referralCode, topics (array)
-const userState = {};
-
-// Global admin state (see previous code for similar structure)
-    
-// When a user sends /start, register them and send welcome message
 async function handleStart(chatId) {
   if (!usersList.includes(chatId)) {
     usersList.push(chatId);
@@ -275,12 +260,8 @@ async function handleStart(chatId) {
   userState[chatId] = { stage: 'awaiting_count' };
 }
 
-// ---------------------------
-// MAIN WALLET PROCESS (via Telegram)
-// ---------------------------
 async function processUserRequest(chatId, count, referralCode, topics) {
   try {
-    // Check daily limit
     const today = new Date().toISOString().slice(0, 10);
     if (!usageData[chatId] || usageData[chatId].date !== today) {
       usageData[chatId] = { date: today, count: 0 };
@@ -292,7 +273,6 @@ async function processUserRequest(chatId, count, referralCode, topics) {
     stats.totalWalletRequests += count;
     saveJSON(STATS_FILE, stats);
     
-    // For each wallet:
     const createdWallets = [];
     for (let i = 0; i < count; i++) {
       await randomDelay(1000, 4000);
@@ -301,9 +281,7 @@ async function processUserRequest(chatId, count, referralCode, topics) {
         break;
       }
       const wallet = await createWallet();
-      // Attach user's topics
       wallet.topics = topics;
-      // Register wallet with referral code (6 letters expected)
       if (referralCode.length !== 6) {
         await bot.sendMessage(chatId, "Referral code must be exactly 6 letters. Request cancelled.");
         break;
@@ -314,7 +292,6 @@ async function processUserRequest(chatId, count, referralCode, topics) {
       }
       createdWallets.push(wallet);
       
-      // Save wallet to global file and to user file
       let existing = [];
       const userWalletFile = `wallet_${chatId}.json`;
       if (fs.existsSync(userWalletFile)) {
@@ -327,7 +304,6 @@ async function processUserRequest(chatId, count, referralCode, topics) {
       existing.push(wallet);
       fs.writeFileSync(userWalletFile, JSON.stringify(existing, null, 2));
       
-      // Send wallet creation log message: header (in code block) and body
       await sendMessageWithHeader(chatId, "✅️ Successful ✅️", `Wallet ${i + 1}️⃣ of ${count}️⃣ created`);
       
       usageData[chatId].count++;
@@ -335,7 +311,6 @@ async function processUserRequest(chatId, count, referralCode, topics) {
     }
     
     await bot.sendMessage(chatId, `Successfully processed ${createdWallets.length} wallet(s).`);
-    // Send the wallet file to the user with caption and pin it.
     try {
       const docMsg = await bot.sendDocument(chatId, `wallet_${chatId}.json`, { caption: "@Zoro_referralbot" });
       try {
@@ -354,8 +329,6 @@ async function processUserRequest(chatId, count, referralCode, topics) {
 // ---------------------------
 // TELEGRAM BOT SETUP & ADMIN PANEL
 // ---------------------------
-const adminState = {}; // { chatId: { stage: string } }
-
 function getAdminMenu() {
   return {
     reply_markup: {
@@ -377,19 +350,17 @@ process.on('uncaughtException', err => {
   console.error("Uncaught Exception:", err);
 });
 
-// Setup readline for bot token and admin ID
-const rl = readline.createInterface({
+const rlInterface = readline.createInterface({
   input: process.stdin,
   output: process.stdout
 });
 
-rl.question('Enter your Telegram Bot Token: ', token => {
-  rl.question('Enter your Admin Telegram ID: ', adminIdInput => {
+rlInterface.question('Enter your Telegram Bot Token: ', token => {
+  rlInterface.question('Enter your Admin Telegram ID: ', adminIdInput => {
     ADMIN_ID = parseInt(adminIdInput);
     bot = new TelegramBot(token, { polling: true });
     console.log('Telegram bot started.');
 
-    // Inline query support
     bot.on('inline_query', query => {
       const results = [{
         type: 'article',
@@ -402,7 +373,6 @@ rl.question('Enter your Telegram Bot Token: ', token => {
       bot.answerInlineQuery(query.id, results);
     });
 
-    // Handle /admin command
     bot.on('message', async msg => {
       const chatId = msg.chat.id;
       const text = msg.text;
@@ -410,13 +380,11 @@ rl.question('Enter your Telegram Bot Token: ', token => {
         await bot.sendMessage(chatId, "You are blocked 🚫.");
         return;
       }
-      // Admin panel
       if (chatId === ADMIN_ID && text === '/admin') {
         adminState[chatId] = { stage: 'idle' };
         await bot.sendMessage(chatId, "Admin Menu:", getAdminMenu());
         return;
       }
-      // Admin text inputs (if adminState not idle)
       if (chatId === ADMIN_ID && adminState[chatId] && adminState[chatId].stage !== 'idle') {
         switch (adminState[chatId].stage) {
           case 'block': {
@@ -515,12 +483,10 @@ rl.question('Enter your Telegram Bot Token: ', token => {
         }
         return;
       }
-      // For normal users: if they send /start, initiate the conversation.
       if (text === '/start') {
         await handleStart(chatId);
         return;
       }
-      // Process user conversation state
       if (!userState[chatId]) return;
       const state = userState[chatId];
       if (state.stage === 'awaiting_count') {
@@ -546,7 +512,6 @@ rl.question('Enter your Telegram Bot Token: ', token => {
         return;
       }
       if (state.stage === 'awaiting_topics') {
-        // Split the input by commas and trim each topic.
         const topics = text.split(",").map(t => t.trim()).filter(t => t.length > 0);
         if (topics.length === 0) {
           await bot.sendMessage(chatId, "You must provide at least one topic. Please try again.");
@@ -561,7 +526,6 @@ rl.question('Enter your Telegram Bot Token: ', token => {
       }
     });
 
-    // Handle admin callback queries
     bot.on('callback_query', async callbackQuery => {
       const action = callbackQuery.data;
       const adminChatId = callbackQuery.from.id;
